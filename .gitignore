@@ -1,0 +1,18 @@
+# Ambiente virtual
+.venv/
+
+# Cache do Python
+__pycache__/
+*.py[cod]
+
+# Modelos convertidos/cache gerados pelo Ursina
+*.bam
+models_compressed/
+
+# Ferramentas
+.ruff_cache/
+
+# Sistema / editores
+.DS_Store
+.vscode/
+.idea/
