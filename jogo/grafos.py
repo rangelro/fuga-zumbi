@@ -20,7 +20,6 @@ G1 = montar([(1, 2, 2), (1, 4, 3), (1, 5, 6), (2, 3, 4), (2, 4, 3),
 POS1 = {1: (75, 212), 2: (181, 137), 3: (275, 212), 4: (122, 307), 5: (225, 307)}
 
 # Grafo 2: 18 bairros da cidade infestada; o nó 1 é o abrigo.
-# Pesos lidos da imagem: confira antes da apresentação.
 G2 = montar([
     (1, 2, 20), (1, 8, 29), (1, 12, 29), (1, 13, 37), (2, 3, 25), (2, 8, 28),
     (2, 12, 39), (3, 4, 25), (3, 8, 30), (3, 13, 54), (4, 6, 32), (4, 7, 42),
@@ -150,3 +149,85 @@ def sortear_arestas(g, origem, n, rng, ciclo=False):
         if conectado(h, origem) and (not ciclo or tsp_forca_bruta(h, origem)[0]):
             return bloq
     raise ValueError("não achei estradas que mantenham uma rota possível")
+
+
+# ---------------------------------------------------------------- mapas aleatórios (modo Desafio)
+
+def _cruzam(p1, p2, p3, p4):
+    """True se os segmentos p1-p2 e p3-p4 se cruzam (pontas em comum não contam)."""
+    if len({p1, p2, p3, p4}) < 4:
+        return False
+
+    def lado(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    return lado(p1, p2, p3) * lado(p1, p2, p4) < 0 and lado(p3, p4, p1) * lado(p3, p4, p2) < 0
+
+
+def _perto_do_segmento(p, a, b, raio):
+    """True se o ponto p fica a menos de `raio` do segmento a-b (estrada passando por cima de um prédio)."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    t = max(0, min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)))
+    return math.dist(p, (a[0] + t * dx, a[1] + t * dy)) < raio
+
+
+def gerar_grafo(n, rng, densidade=1.5, grau_max=4, dist_min=58):
+    """Mapa aleatório conexo e sem estradas cruzadas. Devolve (grafo, posições).
+
+    As posições ficam no mesmo plano da imagem do grafo de 18 nós; o nó 1 (abrigo) é o mais à esquerda.
+    Conexo: começa pela árvore geradora mínima (Kruskal); depois soma estradas curtas que não cruzam nenhuma.
+    """
+    escala = math.sqrt(n / 18) * 1.1
+    w, h = 340 * escala, 240 * escala
+    pts, tentativas = [], 0
+    while len(pts) < n:
+        p = (560 + rng.uniform(-w / 2, w / 2), 225 + rng.uniform(-h / 2, h / 2))
+        if all(math.dist(p, q) >= dist_min for q in pts):
+            pts.append(p)
+        tentativas += 1
+        if tentativas % 3000 == 0:
+            dist_min *= .95  # ponytail: espaço apertado, afrouxa a distância mínima
+    pts.sort()
+    pos = {i + 1: (round(x), round(y)) for i, (x, y) in enumerate(pts)}
+
+    pares = sorted((math.dist(pos[a], pos[b]), a, b) for a in pos for b in pos if a < b)
+    pai = {v: v for v in pos}
+
+    def raiz(v):
+        while pai[v] != v:
+            pai[v] = pai[pai[v]]
+            v = pai[v]
+        return v
+
+    arestas = []
+    for _, a, b in pares:  # Kruskal: garante que tudo fica ligado
+        if raiz(a) != raiz(b):
+            pai[raiz(a)] = raiz(b)
+            arestas.append((a, b))
+    grau = {v: 0 for v in pos}
+    for a, b in arestas:
+        grau[a] += 1
+        grau[b] += 1
+    usadas = set(arestas)
+    for _, a, b in pares:  # estradas extras, curtas primeiro
+        if len(arestas) >= densidade * n:
+            break
+        if (a, b) in usadas or grau[a] >= grau_max or grau[b] >= grau_max:
+            continue
+        if any(_cruzam(pos[a], pos[b], pos[c], pos[d]) for c, d in arestas):
+            continue
+        if any(_perto_do_segmento(pos[v], pos[a], pos[b], 24) for v in pos if v not in (a, b)):
+            continue
+        arestas.append((a, b))
+        usadas.add((a, b))
+        grau[a] += 1
+        grau[b] += 1
+    g = montar([(a, b, max(1, round(math.dist(pos[a], pos[b]) / 3.5))) for a, b in arestas])
+    return g, pos
+
+
+def gerar_grafo_ciclo(n, rng):
+    """Mapa aleatório pequeno que tenha rota passando por todos e voltando (para o Caixeiro)."""
+    while True:
+        g, pos = gerar_grafo(n, rng, densidade=2.0, grau_max=5)
+        if tsp_forca_bruta(g, 1)[0]:
+            return g, pos

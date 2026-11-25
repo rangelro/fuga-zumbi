@@ -4,37 +4,45 @@ import random
 from ursina import color, invoke
 
 from .estilo import C_AMARELO, C_ESTRADA, C_LARANJA, C_VERDE, C_VERMELHO, SETA
-from .grafos import G1, G2, caminho, custo_rota, dijkstra, sem, tsp_forca_bruta
+from .grafos import caminho, custo_rota, dijkstra, sem, tsp_forca_bruta
+
+
+def quebrar(rota, por_linha=8):
+    """Rota em várias linhas, para caber no painel lateral."""
+    return "\n".join(SETA.join(map(str, rota[i:i + por_linha])) for i in range(0, len(rota), por_linha))
 
 
 class ModoDesafio:
     def desafio(self):
-        """Prepara a rodada: zumbis bloqueiam prédios (Dijkstra) ou uma estrada (Caixeiro)."""
+        """Prepara a rodada no mapa atual: zumbis bloqueiam prédios (Dijkstra) ou uma estrada (Caixeiro)."""
         mp = self.mapa()
+        g0 = mp.g
         self.bloq_nos, self.bloq_aresta = set(), None
         if self.desafio_tsp:
             # zumbis numa estrada da rota ótima "livre", desde que ainda exista um ciclo possível
-            livre = self.tsp1[0]
+            livre, custo_livre, _ = tsp_forca_bruta(g0, 1)
+            self.g_jogo, self.otimo_tsp = g0, (livre, custo_livre)
             for a, b in random.sample(list(zip(livre, livre[1:])), len(livre) - 1):
-                g = sem(G1, arestas=[(a, b)])
+                g = sem(g0, arestas=[(a, b)])
                 rota, custo, _ = tsp_forca_bruta(g, 1)
                 if rota:
+                    self.g_jogo, self.bloq_aresta, self.otimo_tsp = g, (a, b), (rota, custo)
+                    mp.infestar(arestas=[(a, b)])
                     break
-            self.g_jogo, self.bloq_aresta, self.otimo_tsp = g, (a, b), (rota, custo)
-            for v in mp.g:
+            for v in g0:
                 if v != 1:
                     mp.caixa(v)
-            mp.infestar(arestas=[(a, b)])
         else:
-            # zumbis em 4 prédios; um deles sempre no caminho mais curto "livre" (pra obrigar a desviar)
-            _, ant_livre, _ = dijkstra(G2, 1)
+            # zumbis em alguns prédios; um deles sempre no caminho mais curto "livre" (pra obrigar a desviar)
+            dist_livre, ant_livre, _ = dijkstra(g0, 1)
+            n_zumbis = max(4, len(g0) // 8)
+            longe = sorted((v for v in g0 if v != 1 and v not in g0[1]), key=lambda v: dist_livre[v])
             while True:
-                destino = random.choice([v for v in G2 if v != 1 and v not in G2[1]])
+                destino = random.choice(longe[len(longe) // 2:])  # destino na metade mais distante
                 meio = caminho(ant_livre, destino)[1:-1]
-                if not meio:
-                    continue
-                bloq = {random.choice(meio), *random.sample([v for v in G2 if v not in (1, destino, *meio)], 3)}
-                g = sem(G2, nos=bloq)
+                outros = [v for v in g0 if v not in (1, destino, *meio)]
+                bloq = {random.choice(meio), *random.sample(outros, min(n_zumbis - 1, len(outros)))}
+                g = sem(g0, nos=bloq)
                 if dijkstra(g, 1)[0].get(destino, float("inf")) < float("inf"):
                     break
             self.destino, self.bloq_nos, self.g_jogo = destino, bloq, g
@@ -57,14 +65,16 @@ class ModoDesafio:
                 if self.pode_ir(v):
                     mp.feixe(v, color.white, .35)
         custo = custo_rota(mp.g, self.jogador)
-        teclas = "Clique: andar   Backspace: desfazer\nT: trocar desafio   R: recomeçar"
+        teclas = "Clique: andar   Backspace: desfazer\nT: menu do desafio   R: nova rodada"
         if self.desafio_tsp:
             falta = len(mp.g) - len(set(self.jogador))
             objetivo = (f"Colete as {len(mp.g) - 1} caixas e volte ao abrigo" if falta
                         else "Agora volte ao abrigo (nó 1)!")
-            self.ui.instrucao("DESAFIO: CAIXEIRO VIAJANTE", objetivo + " sem usar a estrada VERMELHA", teclas)
-            alvo = ("Passe em todas as cidades\ne volte ao abrigo gastando\no MENOS possível.\n\n"
-                    f"REGRA: a estrada {self.bloq_aresta[0]}-{self.bloq_aresta[1]}\n(vermelha) está cheia de\nzumbis. Não dá pra usar.")
+            regra = ("REGRA: a estrada {}-{}\n(vermelha) está cheia de\nzumbis. Não dá pra usar.".format(*self.bloq_aresta)
+                     if self.bloq_aresta else "Neste mapa nenhuma estrada\npôde ser bloqueada.")
+            self.ui.instrucao("DESAFIO: CAIXEIRO VIAJANTE",
+                              objetivo + (" sem usar a estrada VERMELHA" if self.bloq_aresta else ""), teclas)
+            alvo = ("Passe em todas as cidades\ne volte ao abrigo gastando\no MENOS possível.\n\n" + regra)
         else:
             self.ui.instrucao("DESAFIO: DIJKSTRA",
                            f"Chegue ao prédio VERDE (nó {self.destino}) sem passar pelos prédios com ZUMBIS", teclas)
@@ -72,7 +82,7 @@ class ModoDesafio:
                     f"REGRA: os prédios {', '.join(map(str, sorted(self.bloq_nos)))}\n(vermelhos) têm zumbis.\n"
                     "Não dá pra passar por eles.")
         self.ui.t_info.text = (alvo + "\n\nPrédios brancos = onde você\npode ir agora.\n\n"
-                            f"Sua rota: {SETA.join(map(str, self.jogador))}\nSeu custo: {custo}")
+                            f"Sua rota:\n{quebrar(self.jogador)}\nSeu custo: {custo}")
 
     def jogada(self, v):
         mp = self.mapa()

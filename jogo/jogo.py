@@ -2,16 +2,20 @@
 import math
 import random
 
-from ursina import Entity, Text, Vec3, application, camera, color, invoke, lerp, mouse, time
+from ursina import Entity, Text, Vec3, application, camera, color, destroy, invoke, lerp, mouse, scene, time
 
 from .estilo import C_AZUL, C_VERDE, C_VERMELHO, sem_luz
-from .grafos import G1, G2, POS1, POS2, tsp_forca_bruta, tsp_heuristico
+from .grafos import G1, G2, POS1, POS2, gerar_grafo, gerar_grafo_ciclo, tsp_forca_bruta, tsp_heuristico
 from .interface import Interface
 from .mapa import Mapa
 from .modo_desafio import ModoDesafio
 from .modo_fuga import ModoFuga
 from .modo_suprimentos import ModoSuprimentos
 from .personagem import Personagem
+
+
+# Desafio com mapa aleatório: nós no Dijkstra / no Caixeiro (força bruta: (n - 1)!)
+TAMANHOS = {"pequeno": (25, 7), "medio": (35, 8), "grande": (50, 9)}
 
 
 class Jogo(ModoFuga, ModoSuprimentos, ModoDesafio, Entity):
@@ -42,12 +46,16 @@ class Jogo(ModoFuga, ModoSuprimentos, ModoDesafio, Entity):
         self.usar_g2 = False
         self.desafio_tsp = False
         self.com_zumbis = False  # zumbis opcionais nos modos 1 e 2 (tecla Z)
+        self.tamanho = None  # Desafio: None = mapa da atividade; senão uma chave de TAMANHOS
+        self.mapa_aleatorio = None
         self.rodada = 0
         self.hover = None
         self.modo_set(0)
 
     # ================================================================ estado
     def mapa(self):
+        if self.modo == 3 and self.mapa_aleatorio is not None:
+            return self.mapa_aleatorio
         if self.modo == 2 and not self.usar_g2 or self.modo == 3 and self.desafio_tsp:
             return self.regiao
         return self.cidade
@@ -63,15 +71,22 @@ class Jogo(ModoFuga, ModoSuprimentos, ModoDesafio, Entity):
         ang = math.radians(62)
         self.cam_alvo = Vec3(.12 * d, d * math.sin(ang), -d * math.cos(ang))
 
-    def modo_set(self, m):
+    def modo_set(self, m, iniciar=False):
+        """Troca de modo. No Desafio, sem `iniciar`, mostra o menu do desafio antes de começar."""
         self.modo = m
         self.rodada += 1  # invalida animações agendadas da rodada anterior
-        self.cidade.limpar()
-        self.regiao.limpar()
+        menu_desafio = m == 3 and not iniciar
+        if menu_desafio:
+            self.trocar_mapa_aleatorio(None)
+        for mapa in (self.cidade, self.regiao, self.mapa_aleatorio):
+            if mapa:
+                mapa.limpar()
         mp = self.mapa()
-        self.cidade.enabled = mp is self.cidade
-        self.regiao.enabled = mp is self.regiao
+        for mapa in (self.cidade, self.regiao, self.mapa_aleatorio):
+            if mapa:
+                mapa.enabled = mapa is mp
         self.ui.menu.enabled = m == 0
+        self.ui.menu_des.enabled = menu_desafio
         self.ui.hud.enabled = m != 0
         self.ui.res.enabled = False
         self.ui.dica.enabled = False
@@ -105,6 +120,14 @@ class Jogo(ModoFuga, ModoSuprimentos, ModoDesafio, Entity):
             self.preparar_fuga()
         elif m == 2:
             self.suprimentos()
+        elif menu_desafio:
+            self.terminou = True  # nada de cliques no mapa enquanto o menu está aberto
+            self.ui.instrucao("DESAFIO", "Escolha o tipo de desafio e o mapa, depois clique em Começar",
+                              "T: abrir este menu   R: nova rodada")
+            self.ui.t_info.text = ("Dijkstra: chegue ao destino\npelo caminho mais curto.\n\n"
+                                   "Caixeiro: passe em todas as\ncidades e volte ao abrigo.\n\n"
+                                   "Mapa aleatório: um grafo novo\na cada rodada, com mais nós.")
+            self.ui.atualizar_menu_desafio(self.desafio_tsp, self.tamanho, TAMANHOS)
         elif m == 3:
             self.desafio()
 
@@ -146,6 +169,32 @@ class Jogo(ModoFuga, ModoSuprimentos, ModoDesafio, Entity):
             self.fuga(v)
         elif self.modo == 3:
             self.jogada(v)
+
+    # ================================================================ menu do desafio
+    def escolher_desafio(self, tsp=None, tamanho="manter"):
+        if tsp is not None:
+            self.desafio_tsp = tsp
+        if tamanho != "manter":
+            self.tamanho = tamanho
+        self.modo_set(3)
+
+    def iniciar_desafio(self):
+        """Começa uma rodada do Desafio; com mapa aleatório, gera um grafo novo."""
+        self.trocar_mapa_aleatorio(None)
+        if self.tamanho:
+            n = TAMANHOS[self.tamanho][1 if self.desafio_tsp else 0]
+            g, pos = (gerar_grafo_ciclo if self.desafio_tsp else gerar_grafo)(n, random)
+            self.mapa_aleatorio = Mapa(g, pos, True, self.clique, self.passar)
+        self.modo_set(3, iniciar=True)
+
+    def trocar_mapa_aleatorio(self, novo):
+        if self.mapa_aleatorio is not None:
+            self.sobrevivente.parent = scene  # não destruir o sobrevivente junto com o mapa
+            destroy(self.mapa_aleatorio)
+        self.mapa_aleatorio = novo
+
+    def repetir(self):
+        self.iniciar_desafio() if self.modo == 3 else self.modo_set(self.modo)
 
     def aviso_zumbi(self):
         self.ui.t_instrucao.text = "Aí tem ZUMBI! Escolha outro prédio."
@@ -193,12 +242,11 @@ class Jogo(ModoFuga, ModoSuprimentos, ModoDesafio, Entity):
             self.usar_g2 = not self.usar_g2
             self.modo_set(2)
         elif key == "t" and self.modo == 3:
-            self.desafio_tsp = not self.desafio_tsp
             self.modo_set(3)
         elif key == "z" and self.modo != 3:
             self.alternar_zumbis()
         elif key == "r" and self.modo:
-            self.modo_set(self.modo)
+            self.repetir()
         elif key == "backspace":
             self.desfazer()
         elif key in ("scroll up", "scroll down") and self.modo:

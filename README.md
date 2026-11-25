@@ -31,6 +31,11 @@ Testes dos algoritmos:
 sem eles; nos Suprimentos, estradas ficam bloqueadas (1 no mapa de 5 cidades, 3 no de 18) e o Caixeiro acha outra rota.
 O sorteio nunca desconecta o grafo (`sortear_nos` / `sortear_arestas` em `jogo/grafos.py`).
 
+**Mapa aleatório (só no Desafio):** antes de começar, um menu escolhe o tipo (Dijkstra ou Caixeiro) e o mapa:
+o da atividade ou um aleatório com 25/35/50 nós (Dijkstra) ou 7/8/9 nós (Caixeiro, por causa da força bruta).
+Os mapas são gerados por `gerar_grafo` em `jogo/grafos.py`: conexos (árvore geradora mínima + estradas curtas)
+e sem estradas cruzadas.
+
 ## Estrutura
 
 ```

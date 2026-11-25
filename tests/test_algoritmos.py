@@ -1,7 +1,7 @@
 import random
 
-from jogo.grafos import (G1, G2, caminho, conectado, dijkstra, sem, sortear_arestas, sortear_nos,
-                         tsp_forca_bruta, tsp_heuristico)
+from jogo.grafos import (G1, G2, _cruzam, caminho, conectado, dijkstra, gerar_grafo, gerar_grafo_ciclo, sem,
+                         sortear_arestas, sortear_nos, tsp_forca_bruta, tsp_heuristico)
 
 # Grafo 1: ciclo ótimo 1-2-3-5-4-1 = 2+4+3+3+3 = 15
 rota, custo, testadas = tsp_forca_bruta(G1, 1)
@@ -39,4 +39,14 @@ for _ in range(50):
     assert tsp_forca_bruta(sem(G1, arestas=arestas), 1)[0]
     assert conectado(sem(G2, arestas=sortear_arestas(G2, 1, 3, rng)), 1)
 assert not conectado(sem(G1, nos={2, 4, 5}), 1)
+# Mapas aleatórios: conexos, sem estradas cruzadas, nó 1 mais à esquerda, pesos positivos
+for n in (25, 35, 50):
+    g, pos = gerar_grafo(n, random.Random(n))
+    arestas = [(a, b) for a in g for b in g[a] if a < b]
+    assert sorted(g) == list(range(1, n + 1)) and conectado(g, 1)
+    assert min(pos, key=lambda v: pos[v][0]) == 1 and all(w > 0 for a, b in arestas for w in [g[a][b]])
+    assert not any(_cruzam(pos[a], pos[b], pos[c], pos[d]) for a, b in arestas for c, d in arestas)
+for n in (7, 8, 9):
+    g, _ = gerar_grafo_ciclo(n, random.Random(n))
+    assert len(g) == n and tsp_forca_bruta(g, 1)[0]
 print("OK — todos os testes passaram. TSP grafo 2 (heurístico):", custo2)

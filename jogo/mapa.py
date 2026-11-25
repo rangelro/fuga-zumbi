@@ -20,6 +20,7 @@ class Mapa(Entity):
         self.centro = Vec3((min(xs) + max(xs)) / 2, 0, (min(zs) + max(zs)) / 2)
         self.largura = max(xs) - min(xs) + 6
         self.profundidade = max(zs) - min(zs) + 6
+        self.letra = max(1, self.largura / 47)  # mapa maior = câmera mais longe = rótulos maiores
 
         for a in g:
             for b, w in g[a].items():
@@ -33,7 +34,7 @@ class Mapa(Entity):
                         sem_luz(Entity(parent=e, model="cube", color=color.rgb32(200, 180, 90),
                                        position=(0, .55, k * .2), scale=(.06, .1, .08)))
                     self.estradas[(a, b)] = self.estradas[(b, a)] = e
-                    rotulo(str(w), self, meio + Vec3(0, 1, 0), color.rgb32(255, 225, 140), 16)
+                    rotulo(str(w), self, meio + Vec3(0, 1, 0), color.rgb32(255, 225, 140), 16 * self.letra)
 
         for v, c in self.p.items():
             Entity(parent=self, model="cube", color=color.rgb32(85, 88, 96), position=c, scale=(2.8, .25, 2.8))
@@ -53,7 +54,7 @@ class Mapa(Entity):
             self.predios[v] = predio
             predio.escala = predio.scale_x
             rotulo(("ABRIGO " if v == 1 else "") + str(v), self, c + Vec3(0, 4.6, 0),
-                   C_AZUL if v == 1 else color.white, 24)
+                   C_AZUL if v == 1 else color.white, 24 * self.letra)
             feixe = sem_luz(Entity(parent=self, model="cube", position=c + Vec3(0, 6, 0), scale=(.7, 12, .7),
                                    color=color.rgba(1, 1, 1, 0)))
             feixe.set_transparency(True)

@@ -29,6 +29,7 @@ class Interface:
         self.montar_hud()
         self.montar_menu()
         self.montar_resultado()
+        self.montar_menu_desafio()
 
     # ================================================================ HUD
     def montar_hud(self):
@@ -98,7 +99,7 @@ class Interface:
         self.res_linha = Text("", parent=self.res, position=(MAPA_X, -.305), origin=(0, 0), scale=1.1)
         self.res_rota = Text("", parent=self.res, position=(MAPA_X, -.345), origin=(0, 0), scale=.85,
                              color=color.light_gray)
-        botao("Jogar de novo  (R)", MAPA_X - .16, -.415, .28, .06, lambda: self.jogo.modo_set(self.jogo.modo), parent=self.res)
+        botao("Jogar de novo  (R)", MAPA_X - .16, -.415, .28, .06, self.jogo.repetir, parent=self.res)
         botao("Menu", MAPA_X + .16, -.415, .28, .06, self.jogo.ir_menu, cor=color.rgb32(60, 64, 80), parent=self.res)
 
     def resultado_mostrar(self, titulo, cor, linha, rota):
@@ -108,3 +109,39 @@ class Interface:
         self.res.enabled = True
         self.res.y = -.2
         self.res.animate_y(0, duration=.35, curve=curve.out_back)
+
+    # ================================================================ menu do desafio
+    def montar_menu_desafio(self):
+        """Antes de começar o Desafio: tipo (Dijkstra/Caixeiro) e mapa (da atividade ou aleatório)."""
+        m = self.menu_des = Entity(parent=camera.ui, enabled=False)
+        caixa_ui(MAPA_X, -.01, 1.02, .6, color.rgba32(10, 12, 20, 240), parent=m)
+        Text("DESAFIO: VOCÊ vs. O ALGORITMO", parent=m, position=(MAPA_X, .24), origin=(0, 0), scale=1.6,
+             color=C_VERMELHO)
+        Text("Tipo de desafio", parent=m, position=(MAPA_X, .165), origin=(0, 0), scale=.85, color=color.light_gray)
+        self.b_tipo = [
+            botao("Dijkstra: chegar ao destino", MAPA_X - .235, .11, .45, .06,
+                  lambda: self.jogo.escolher_desafio(tsp=False), parent=m, escala=.85),
+            botao("Caixeiro: visitar todos", MAPA_X + .235, .11, .45, .06,
+                  lambda: self.jogo.escolher_desafio(tsp=True), parent=m, escala=.85)]
+        Text("Mapa", parent=m, position=(MAPA_X, .03), origin=(0, 0), scale=.85, color=color.light_gray)
+        self.b_mapa = {}
+        for i, t in enumerate([None, "pequeno", "medio", "grande"]):
+            self.b_mapa[t] = botao("Mapa", MAPA_X - .3525 + i * .235, -.025, .225, .06,
+                                   (lambda t=t: self.jogo.escolher_desafio(tamanho=t)), parent=m, escala=.75)
+        self.t_mapa_info = Text("", parent=m, position=(MAPA_X, -.1), origin=(0, 0), scale=.8,
+                                color=color.light_gray)
+        botao("Começar", MAPA_X, -.2, .3, .07, self.jogo.iniciar_desafio, cor=color.rgb32(30, 140, 70), parent=m)
+
+    def atualizar_menu_desafio(self, tsp, tamanho, tamanhos):
+        def pintar(b, ligado):
+            b.color = color.rgb32(150, 25, 25) if ligado else color.rgb32(60, 64, 80)
+            b.highlight_color = b.color.tint(.2)
+        pintar(self.b_tipo[0], not tsp)
+        pintar(self.b_tipo[1], tsp)
+        for t, b in self.b_mapa.items():
+            b.text = "Da atividade" if t is None else f"Aleatório: {tamanhos[t][1 if tsp else 0]} nós"
+            pintar(b, t == tamanho)
+        if tamanho is None:
+            self.t_mapa_info.text = f"Mapa da atividade: {5 if tsp else 18} nós"
+        else:
+            self.t_mapa_info.text = "Gerado na hora: todos os nós ligados, sem estradas cruzadas"
